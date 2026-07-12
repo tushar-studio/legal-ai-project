@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal AI Research Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <aside class="main-sidebar">
+        <div class="sidebar-logo"><i class="fa-solid fa-scale-balanced"></i></div>
+        <nav class="nav-links">
+            <button class="nav-item active" data-module="precedent" title="Case Research"><i class="fa-solid fa-gavel"></i><span>Cases</span></button>
+            <button class="nav-item" data-module="draftsman" title="Legal Drafts"><i class="fa-solid fa-file-signature"></i><span>Drafts</span></button>
+            <button class="nav-item" data-module="analyzer" title="Document Analyzer"><i class="fa-solid fa-file-shield"></i><span>Analyze</span></button>
+            <button class="nav-item" data-module="chat" title="Research Assistant"><i class="fa-solid fa-comments"></i><span>Chat</span></button>
+        </nav>
+        <div class="sidebar-footer"><i class="fa-solid fa-circle-user"></i></div>
+    </aside>
+
+    <main class="app-workspace-wrapper">
+        <section id="module-precedent" class="module-view active">
+            <aside class="column col-left">
+                <header class="column-header"><h2>AI Legal Search</h2></header>
+                <div class="search-container">
+                    <div class="search-box"><i class="fa-solid fa-magnifying-glass search-icon"></i><input id="legal-search" type="search" placeholder="Search laws, articles or cases"></div>
+                    <div class="ai-summary-badge">
+                        <div class="badge-header"><i class="fa-solid fa-sparkles"></i> AI Search Summary</div>
+                        <p id="search-summary-text" class="summary-copy">Search Indian constitutional law, cases or doctrines.</p>
+                        <div class="badge-stats"><span><strong id="result-count">5</strong> judgments</span><span><strong id="landmark-count">5</strong> landmark</span><span><strong id="article-count">1</strong> articles</span><span><strong id="act-count">1</strong> acts</span></div>
+                    </div>
+                    <div class="topics-section"><h3>Legal Topics</h3><div id="topic-list" class="topic-list"></div></div>
+                </div>
+                <div class="column-header"><h2>Landmark Cases</h2></div>
+                <div id="cases-container" class="cases-container"></div>
+            </aside>
+
+            <section class="column col-middle case-workspace">
+                <header class="column-header"><h2>Case Dashboard</h2></header>
+                <div id="case-dashboard" class="case-dashboard"></div>
+            </section>
+
+            <aside class="column col-right">
+                <header class="column-header"><h2>Research Intelligence</h2></header>
+                <div class="analysis-container">
+                    <div class="dashboard-tabs" id="research-tabs">
+                        <button class="dash-tab active" data-tab="paragraphs">Paragraphs</button>
+                        <button class="dash-tab" data-tab="analysis">Analysis</button>
+                        <button class="dash-tab" data-tab="tree">Heritage Tree</button>
+                        <button class="dash-tab" data-tab="similar">Similar</button>
+                        <button class="dash-tab" data-tab="graph">Knowledge Graph</button>
+                    </div>
+                    <div id="research-panel"></div>
+                </div>
+            </aside>
+        </section>
+
+        <section id="module-draftsman" class="module-view">
+            <div class="column grid-span-left-middle"><header class="column-header"><h2>AI Legal Draftsman Workspace</h2></header>
+                <div class="draftsman-container"><div class="input-group"><label for="draft-type-select">Select Draft Type</label><select class="premium-select" id="draft-type-select"><option value="writ">Writ Petition (Article 32/226)</option><option value="nda">Non-Disclosure Agreement (NDA)</option><option value="defamation">Legal Notice for Defamation</option></select></div><div class="input-group"><label for="draft-variables">Key Facts & Case Metadata</label><textarea class="premium-textarea" id="draft-variables" placeholder="Enter names of parties, facts and jurisdiction details..."></textarea></div><button class="ai-generate-btn" id="generate-draft"><i class="fa-solid fa-wand-magic-sparkles"></i> Generate Draft Baseline</button></div>
+            </div>
+            <div class="column col-right"><header class="column-header"><h2>Output Preview</h2></header><div class="editor-workspace-sheet" id="draft-output-container"><div class="editor-placeholder"><i class="fa-solid fa-scroll editor-icon"></i><p>Enter parameters and click generate to create a baseline template.</p></div></div></div>
+        </section>
+
+        <section id="module-analyzer" class="module-view"><div class="column grid-span-left-middle"><header class="column-header"><h2>Document Intelligence Scanner</h2></header><div class="analyzer-zone"><div class="drop-target-box"><i class="fa-solid fa-cloud-arrow-up drop-icon"></i><h3>Upload Case File / PDF</h3><p>Upload a text-based PDF for local extraction and review.</p><input type="file" id="case-file-input" accept=".pdf,application/pdf" hidden><button class="browse-btn" id="browse-file">Browse Local Storage</button><p id="file-name" class="upload-status"></p></div></div></div><div class="column col-right"><header class="column-header"><h2>Critical Risk Vectors</h2></header><div id="analyzer-results" class="analyzer-placeholder"><p>Upload a document to start extraction.</p></div></div></section>
+
+        <section id="module-chat" class="module-view"><div class="column grid-span-full"><header class="column-header"><h2>Research Assistant</h2></header><div class="chat-workspace"><div class="chat-messages-container" id="chat-messages"><div class="ai-chat-bubble"><div class="bubble-avatar"><i class="fa-solid fa-robot"></i></div><div class="bubble-content">Ask about the selected case, its legal doctrines, or research workflow.</div></div></div><form id="chat-form" class="chat-input-bar"><input id="chat-user-input" placeholder="Ask a legal research question..."><button class="chat-send-btn" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button></form></div></div></section>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>
