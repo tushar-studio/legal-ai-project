@@ -3,16 +3,18 @@ from functools import lru_cache
 from html import unescape
 from html.parser import HTMLParser
 import json
+import logging
 import os
 import re
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 from urllib.request import Request, urlopen
 
 from .analysis import analyze_paragraph, split_paragraphs
 
 API_BASE = "https://api.indiankanoon.org"
 PUBLIC_BASE = "https://indiankanoon.org"
+logger = logging.getLogger(__name__)
 
 
 class IndianKanoonError(Exception):
@@ -43,15 +45,43 @@ def api_request(path: str, params: dict | None = None) -> dict:
         raise IndianKanoonError("Indian Kanoon live search is not configured. Set INDIAN_KANOON_API_TOKEN in the deployment environment.", 503)
     url = f"{API_BASE}{path}"
     if params:
-        url = f"{url}?{urlencode(params)}"
-    request = Request(url, headers={"Authorization": f"Token {token}", "Accept": "application/json", "User-Agent": "Legal-AI-Research-Assistant/1.0"})
+        # The token-authenticated Indian Kanoon search API expects GET query
+        # parameters such as formInput and pagenum. urlencode prevents search
+        # terms like "Section 302 IPC" from becoming an invalid URL.
+        url = f"{url}?{urlencode(params, doseq=True, quote_via=quote_plus)}"
+    request = Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": f"Token {token}",
+            "Accept": "application/json",
+            "User-Agent": "Legal-AI-Research-Assistant/1.0",
+        },
+    )
     try:
         with urlopen(request, timeout=20) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        if exc.code == 403:
-            raise IndianKanoonError("Indian Kanoon rejected the configured API credentials.", 502) from exc
-        raise IndianKanoonError(f"Indian Kanoon returned HTTP {exc.code}.", 502) from exc
+        # Read the provider body once and write it to Render logs. Never pass
+        # that body to the browser: it may contain provider diagnostics.
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:4000]
+        except Exception:  # pragma: no cover - defensive logging path
+            body = "<unable to read upstream response body>"
+        logger.error(
+            "Indian Kanoon API request failed: method=GET status=%s url=%s reason=%s body=%s",
+            exc.code,
+            url,
+            exc.reason,
+            body,
+        )
+        if exc.code in (401, 403):
+            message = "Indian Kanoon rejected the configured API credentials. Check the server-side API token."
+        elif exc.code == 405:
+            message = "Indian Kanoon rejected the search request. The provider response has been logged server-side."
+        else:
+            message = "Indian Kanoon could not complete this request. The provider response has been logged server-side."
+        raise IndianKanoonError(message, 502) from exc
     except (URLError, TimeoutError) as exc:
         raise IndianKanoonError("Indian Kanoon could not be reached. Please try again.", 503) from exc
     except json.JSONDecodeError as exc:
