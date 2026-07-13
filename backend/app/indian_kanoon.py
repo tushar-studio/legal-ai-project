@@ -45,13 +45,14 @@ def api_request(path: str, params: dict | None = None) -> dict:
         raise IndianKanoonError("Indian Kanoon live search is not configured. Set INDIAN_KANOON_API_TOKEN in the deployment environment.", 503)
     url = f"{API_BASE}{path}"
     if params:
-        # The token-authenticated Indian Kanoon search API expects GET query
-        # parameters such as formInput and pagenum. urlencode prevents search
-        # terms like "Section 302 IPC" from becoming an invalid URL.
+        # The deployed Indian Kanoon endpoint expects a POST request while
+        # retaining its search inputs in the URL query string. urlencode
+        # prevents terms like "Section 302 IPC" from becoming an invalid URL.
         url = f"{url}?{urlencode(params, doseq=True, quote_via=quote_plus)}"
     request = Request(
         url,
-        method="GET",
+        method="POST",
+        data=b"",
         headers={
             "Authorization": f"Token {token}",
             "Accept": "application/json",
@@ -69,7 +70,7 @@ def api_request(path: str, params: dict | None = None) -> dict:
         except Exception:  # pragma: no cover - defensive logging path
             body = "<unable to read upstream response body>"
         logger.error(
-            "Indian Kanoon API request failed: method=GET status=%s url=%s reason=%s body=%s",
+            "Indian Kanoon API request failed: method=POST status=%s url=%s reason=%s body=%s",
             exc.code,
             url,
             exc.reason,
