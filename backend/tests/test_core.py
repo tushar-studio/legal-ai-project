@@ -1,38 +1,32 @@
-"""Core checks for the local Legal AI workflow (no network or API key required)."""
+import os
 import unittest
+from unittest.mock import patch
 
 from app.analysis import analyze_paragraph, split_paragraphs
-from app.database import initialize_database
-from app.main import dynamic_similar_cases, heritage_tree, search_cases
+from app.indian_kanoon import IndianKanoonError, html_paragraphs
 
 
-class LegalAiCoreTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        initialize_database()
-
-    def test_search_returns_related_topics(self):
-        result = search_cases("press freedom")
-        self.assertGreater(result["count"], 0)
-        self.assertIn("Press Freedom", result["related_topics"])
-
-    def test_similar_cases_are_dynamic(self):
-        results = dynamic_similar_cases("romesh-thappar")
-        self.assertGreater(len(results), 0)
-        self.assertIn("similarity_score", results[0])
-        self.assertIn("reason", results[0])
-
-    def test_heritage_tree_has_current_case(self):
-        tree = heritage_tree("romesh-thappar")
-        self.assertTrue(tree["root"]["topics"])
-        self.assertTrue(any(node["is_current"] for node in tree["nodes"]))
-
-    def test_paragraph_processing_extracts_metadata(self):
-        text = "The petitioner submitted that Article 19(1)(a) protects freedom of speech under the Constitution of India."
-        result = analyze_paragraph(text)
-        self.assertEqual(result["classification"], "Arguments")
+class LiveResearchTests(unittest.TestCase):
+    def test_paragraph_analysis_extracts_nested_article(self):
+        result = analyze_paragraph("The petitioner submitted that Article 19(1)(a) protects freedom of speech.")
         self.assertIn("Article 19(1)(a)", result["referenced_articles"])
-        self.assertEqual(split_paragraphs("short\n\n" + text), [text])
+
+    def test_live_html_preserves_source_paragraphs(self):
+        html = '<p id="p12">12. The petitioner submitted that Article 19(1)(a) protects freedom of speech and expression.</p>'
+        paragraph = html_paragraphs("123", html)[0]
+        self.assertEqual(paragraph["paragraph_number"], "12")
+        self.assertIn("/doc/123/#p12", paragraph["source_url"])
+
+    def test_split_paragraphs_discards_short_fragments(self):
+        text = "Short\n\nThis is a sufficiently detailed legal paragraph that provides enough source material for the analysis pipeline to process correctly."
+        self.assertEqual(len(split_paragraphs(text)), 1)
+
+    def test_missing_token_is_explicit(self):
+        with patch.dict(os.environ, {}, clear=True):
+            from app.indian_kanoon import api_request
+            with self.assertRaises(IndianKanoonError) as context:
+                api_request("/search/")
+        self.assertEqual(context.exception.status_code, 503)
 
 
 if __name__ == "__main__":

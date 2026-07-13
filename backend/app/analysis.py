@@ -1,4 +1,4 @@
-"""Deterministic legal-text processing used by the local ingestion pipeline."""
+"""Deterministic legal-text processing for live judgment paragraphs."""
 import re
 
 

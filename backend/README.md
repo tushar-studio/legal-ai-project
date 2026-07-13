@@ -1,6 +1,6 @@
 # Legal AI Backend
 
-FastAPI and SQLite foundation for the Legal AI Research Assistant.
+FastAPI service for the live Indian Kanoon-backed Legal AI Research Assistant.
 
 ## Run locally
 
@@ -12,19 +12,17 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Open `http://127.0.0.1:8000/docs` to try the API. The SQLite database is created and seeded automatically on first run.
+Set `INDIAN_KANOON_API_TOKEN` before starting the service. The token stays server-side and must never be placed in frontend JavaScript.
 
-## Working local features
+For local development, copy `.env.example` values into your shell environment before running Uvicorn.
 
-- Search and inspect the seeded constitutional-law cases.
-- Upload a text-based PDF from the frontend; text is extracted and recorded in SQLite.
-- During ingestion, extracted text is split into paragraphs and given deterministic classifications, legal terms, article references, Act references, and case-reference metadata. View this data at `GET /api/documents/{document_id}/paragraphs`.
-- Search extracted PDF passages with `GET /api/documents/search?query=...`; uploaded pages are indexed locally with SQLite full-text search.
-- Similar-case scores and the heritage tree are generated from the stored case topics and legal-language overlap through `/api/cases/{slug}/similar` and `/api/cases/{slug}/heritage`.
-- Review transparent keyword-based risk vectors for uploaded documents.
-- Ask a research question in the chat panel; answers cite local case records and relevant passages from extracted uploaded PDFs.
+## Live data flow
 
-The current analyzer and chat are local review aids, not legal advice or a substitute for verifying the primary judgment. Scanned PDFs need OCR support before their text can be analyzed.
+- `GET /api/search?query=...` requests live Indian Kanoon search results.
+- `GET /api/cases/{id}` and the related paragraph, citation tree, similar-case, and graph routes retrieve the selected live judgment.
+- Every displayed analysis section links back to the original Indian Kanoon judgment source. When the source HTML does not expose a page number, the interface explicitly says so rather than inventing one.
+
+Indian Kanoon API attribution is displayed in the application. Review Indian Kanoon's API documentation and terms before deploying.
 
 ## Verify the core workflow
 
@@ -41,4 +39,4 @@ This repository includes `render.yaml`, which deploys one FastAPI web service th
 2. In Render, choose **New → Blueprint**, connect that repository, and approve the detected `render.yaml`.
 3. Render will provide an `onrender.com` URL. Share that URL to open the app from any device.
 
-The blueprint keeps the SQLite database and uploaded PDFs on `/var/data`, a persistent disk. A Render persistent disk requires a paid web-service plan. For a custom domain, add it in the Render service settings after the first deploy.
+During the first Render Blueprint setup, enter `INDIAN_KANOON_API_TOKEN` when Render prompts for it. For a custom domain, add it in the Render service settings after the first deploy.

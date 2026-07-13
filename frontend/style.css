@@ -687,6 +687,12 @@ body {
 .draft-notice { color: #57534e; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11px; line-height: 1.5; margin-top: 16px; }
 .chat-source { border-top: 1px solid #303038; margin-top: 10px; padding-top: 10px; color: #b9d8ff; font-size: 12px; }
 .chat-source span { color: #b5b5bd; display: inline-block; line-height: 1.45; margin-top: 4px; }
+.source-link { color: #67b0ff; display: inline-block; font-size: 12px; margin-top: 7px; text-decoration: underline; }
+.source-attribution { color: #8fc0ff; font-size: 11px; margin-top: 14px; }
+.granular-citation { color: #8fc0ff !important; font-size: 11px !important; line-height: 1.55; margin-top: 10px; }
+.dashboard-empty { align-items: center; border: 1px dashed #303038; border-radius: 12px; color: #a1a1aa; display: flex; flex: 1; flex-direction: column; justify-content: center; min-height: 280px; padding: 34px; text-align: center; }
+.dashboard-empty i { color: #2979FF; font-size: 30px; margin-bottom: 14px; }
+.dashboard-empty p { font-size: 13px; line-height: 1.7; max-width: 440px; }
 
 /* Research workflow additions */
 .case-workspace { overflow-y: auto; }
@@ -721,7 +727,6 @@ body {
 .knowledge-graph section { background: #16161a; border: 1px solid #27272a; border-radius: 9px; padding: 12px; }
 .knowledge-graph h4 { color: #8fc0ff; font-size: 12px; margin-bottom: 9px; text-transform: uppercase; }
 .knowledge-graph p { color: #71717a; font-size: 12px; }
-.upload-status { color: #00E676 !important; font-size: 12px !important; }
 .user-chat-bubble { align-self: flex-end; max-width: 80%; background: #2979FF; color: #fff; border-radius: 12px 0 12px 12px; padding: 12px 16px; font-size: 13px; line-height: 1.5; }
 
 @media (max-width: 980px) {

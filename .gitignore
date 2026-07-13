@@ -1,6 +1,4 @@
 backend/.venv/
 backend/__pycache__/
-backend/legal_ai.db
-backend/uploads/
 __pycache__/
 *.py[cod]
