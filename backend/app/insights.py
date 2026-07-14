@@ -144,3 +144,48 @@ def _llm_insights(title: str, contexts: dict[str, str]) -> dict | None:
 def build_case_insights(title: str, paragraphs: list[dict], full_text: str) -> dict:
     contexts = build_section_contexts(paragraphs, full_text)
     return _llm_insights(title, contexts) or deterministic_insights(paragraphs, full_text)
+
+
+def paragraph_takeaway(text: str, analysis: dict) -> dict:
+    """Fast, source-only inline insight for every paragraph card.
+
+    The LLM hook is feature-flagged because a long judgment can contain
+    hundreds of paragraphs; deterministic output is the safe bulk default.
+    """
+    llm_bullets = _llm_paragraph_bullets(text, analysis)
+    if llm_bullets:
+        return {"bullets": llm_bullets, "mode": "llm-source-grounded"}
+    focus = analysis.get("classification", "Analysis")
+    authorities = analysis.get("referenced_articles", []) + analysis.get("referenced_acts", [])
+    opening = _compact(text, 1)
+    impact = _compact(" ".join(_sentences(text, 3)[1:]) or text, 1)
+    bullets = [f"Legal focus: {focus}.", f"Key takeaway: {opening}"]
+    if authorities:
+        bullets.append(f"Authority signal: {', '.join(authorities[:3])}.")
+    else:
+        bullets.append(f"Practical impact: {impact}")
+    return {"bullets": bullets[:3], "mode": "deterministic-source-grounded"}
+
+
+def _llm_paragraph_bullets(text: str, analysis: dict) -> list[str] | None:
+    if os.getenv("LEGAL_LLM_PARAGRAPH_INSIGHTS", "false").lower() != "true":
+        return None
+    settings = _llm_settings()
+    if not settings:
+        return None
+    base_url, api_key, model = settings
+    prompt = (
+        "Return JSON only with a bullets array of 2-3 concise executive legal takeaways. "
+        "Use only this source paragraph; do not infer facts. Highlight legal impact or authority.\n"
+        f"Classification: {analysis.get('classification', 'Analysis')}\nParagraph: {text}"
+    )
+    payload = json.dumps({"model": model, "temperature": 0, "response_format": {"type": "json_object"}, "messages": [{"role": "system", "content": "You are a source-grounded Indian legal research assistant."}, {"role": "user", "content": prompt}]}).encode("utf-8")
+    request = Request(f"{base_url}/chat/completions", data=payload, method="POST", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=20) as response:
+            bullets = json.loads(json.loads(response.read().decode("utf-8"))["choices"][0]["message"]["content"]).get("bullets")
+        if isinstance(bullets, list) and 2 <= len(bullets) <= 3 and all(isinstance(item, str) and item.strip() for item in bullets):
+            return bullets
+    except (HTTPError, URLError, TimeoutError, KeyError, ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Paragraph insight LLM failed; using deterministic fallback: %s", exc)
+    return None

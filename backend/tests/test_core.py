@@ -3,8 +3,8 @@ import unittest
 from unittest.mock import patch
 
 from app.analysis import analyze_paragraph, split_paragraphs
-from app.indian_kanoon import IndianKanoonError, case_metadata_defaults, html_paragraphs
-from app.insights import deterministic_insights
+from app.indian_kanoon import IndianKanoonError, authority_items, case_metadata_defaults, html_paragraphs
+from app.insights import deterministic_insights, paragraph_takeaway
 
 
 class LiveResearchTests(unittest.TestCase):
@@ -17,6 +17,7 @@ class LiveResearchTests(unittest.TestCase):
         paragraph = html_paragraphs("123", html)[0]
         self.assertEqual(paragraph["paragraph_number"], "12")
         self.assertIn("/doc/123/#p12", paragraph["source_url"])
+        self.assertGreaterEqual(len(paragraph["ai_analysis"]["bullets"]), 2)
 
     def test_split_paragraphs_discards_short_fragments(self):
         text = "Short\n\nThis is a sufficiently detailed legal paragraph that provides enough source material for the analysis pipeline to process correctly."
@@ -46,6 +47,15 @@ class LiveResearchTests(unittest.TestCase):
         self.assertIn("Supreme Court", court)
         self.assertIn("Constitutional Interpretation", bench)
         self.assertEqual(year, "1950")
+
+    def test_authority_parser_uses_citation_and_citedby_lists(self):
+        items = authority_items({"citeList": [{"tid": 11, "title": "A v. B"}], "citedbyList": [{"tid": 12, "title": "C v. D"}]}, "10")
+        self.assertEqual({item["reason"] for item in items}, {"Cited authority", "Cited by"})
+
+    def test_paragraph_takeaway_is_short_and_source_grounded(self):
+        takeaway = paragraph_takeaway("The Court held that Article 19 protects speech.", {"classification": "Holding", "referenced_articles": ["Article 19"], "referenced_acts": []})
+        self.assertLessEqual(len(takeaway["bullets"]), 3)
+        self.assertIn("Legal focus", takeaway["bullets"][0])
 
 
 if __name__ == "__main__":

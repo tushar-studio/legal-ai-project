@@ -11,7 +11,7 @@ from urllib.parse import quote_plus, urlencode
 from urllib.request import Request, urlopen
 
 from .analysis import analyze_paragraph, split_paragraphs
-from .insights import build_case_insights
+from .insights import build_case_insights, paragraph_takeaway
 
 API_BASE = "https://api.indiankanoon.org"
 PUBLIC_BASE = "https://indiankanoon.org"
@@ -134,7 +134,8 @@ def html_paragraphs(tid: str, html: str) -> list[dict]:
         number_match = re.match(r"^\s*(?:\[|\()?([0-9]{1,4})(?:\]|\)|\.)\s*", text)
         paragraph_number = number_match.group(1) if number_match else str(position)
         analysis = analyze_paragraph(text)
-        paragraphs.append({"paragraph_number": paragraph_number, "classification": analysis["classification"], "original_text": text, "simplified_explanation": "Source-grounded analysis is shown with the original paragraph and citation below.", "legal_terms": analysis["legal_terms"], "referenced_articles": analysis["referenced_articles"], "referenced_acts": analysis["referenced_acts"], "referenced_cases": analysis["referenced_cases"], "relevance": "This paragraph is included because it is part of the live Indian Kanoon judgment text.", "page_number": None, "citation_label": f"Paragraph {paragraph_number}; page not supplied in source HTML", "source_url": source_url(tid, anchor)})
+        takeaway = paragraph_takeaway(text, analysis)
+        paragraphs.append({"paragraph_number": paragraph_number, "classification": analysis["classification"], "original_text": text, "simplified_explanation": takeaway["bullets"][1], "ai_analysis": takeaway, "legal_terms": analysis["legal_terms"], "referenced_articles": analysis["referenced_articles"], "referenced_acts": analysis["referenced_acts"], "referenced_cases": analysis["referenced_cases"], "relevance": "This paragraph is included because it is part of the live Indian Kanoon judgment text.", "page_number": None, "citation_label": f"Paragraph {paragraph_number}; page not supplied in source HTML", "source_url": source_url(tid, anchor)})
     return paragraphs
 
 
@@ -173,20 +174,83 @@ def get_case(tid: str) -> dict:
     return {"slug": tid, "name": title, "court": court, "bench": bench, "judges": text_from_html(str(metadata.get("author", "Not supplied by source"))), "year": year, "citation": text_from_html(str(citations[0].get("title", "Indian Kanoon live judgment") if citations and isinstance(citations[0], dict) else "Indian Kanoon live judgment")), **insights, "topics": [], "source_url": source_url(tid), "attribution": "Powered by Indian Kanoon"}
 
 
-def get_case_similar(tid: str) -> list[dict]:
-    document = raw_document(tid)
+def authority_items(document: dict, tid: str) -> list[dict]:
+    """Normalize direct citations and citing decisions from the source payload."""
     results = []
-    for item in document.get("citeList", [])[:10]:
-        if isinstance(item, dict):
+    for field, relationship in (("citeList", "Cited authority"), ("citedbyList", "Cited by")):
+        for item in document.get(field, []) or []:
+            if not isinstance(item, dict):
+                continue
             target = str(item.get("tid", ""))
-            results.append({"name": text_from_html(item.get("title", "Referenced case")), "slug": target, "similarity_score": 1.0, "reason": "Cited in the selected Indian Kanoon judgment", "source_url": source_url(target) if target else source_url(tid)})
+            if not target or target == tid:
+                continue
+            results.append({
+                "name": text_from_html(item.get("title", "Referenced judgment")),
+                "slug": target,
+                "similarity_score": 1.0,
+                "reason": relationship,
+                "source_url": source_url(target),
+            })
     return results
 
 
+def semantic_search_query(document: dict) -> str:
+    title = text_from_html(document.get("title", ""))
+    text = text_from_html(document.get("doc", ""))
+    articles = re.findall(r"\bArticle\s+\d+(?:\s*\([^)]+\))*", text, flags=re.IGNORECASE)[:2]
+    acts = re.findall(r"\b[A-Z][A-Za-z,&\- ]{2,60}\s+Act(?:,?\s+\d{4})?", text)[:1]
+    query = " ".join((title.split()[:8] + articles + acts)).strip()
+    return query or title or "Indian constitutional law"
+
+
+@lru_cache(maxsize=32)
+def get_case_similar(tid: str) -> list[dict]:
+    document = raw_document(tid)
+    results = authority_items(document, tid)
+    seen = {item["slug"] for item in results}
+    if len(results) < 5:
+        try:
+            fallback = search_legal_data(semantic_search_query(document))
+            for item in fallback["results"]:
+                if item["slug"] == tid or item["slug"] in seen:
+                    continue
+                results.append({"name": item["name"], "slug": item["slug"], "similarity_score": 0.72, "reason": "Related live search result based on title, statutes, and legal context", "source_url": item["source_url"]})
+                seen.add(item["slug"])
+                if len(results) >= 10:
+                    break
+        except IndianKanoonError as exc:
+            logger.warning("Similar-case fallback search failed for %s: %s", tid, exc.message)
+    return results[:10]
+
+
+@lru_cache(maxsize=32)
 def get_case_tree(tid: str) -> dict:
+    """Build up to ten nodes across two citation generations."""
     case = get_case(tid)
-    citations = get_case_similar(tid)
-    return {"root": {"label": "Selected live judgment", "topics": [case["name"]]}, "nodes": [{"name": case["name"], "slug": tid, "year": case["year"], "is_current": True, "relationship": "Selected judgment"}] + [{"name": item["name"], "slug": item["slug"], "year": "Source date not supplied", "is_current": False, "relationship": "Cited authority"} for item in citations]}
+    nodes = [{"name": case["name"], "slug": tid, "year": case["year"], "is_current": True, "relationship": "Selected judgment", "parent_slug": None, "depth": 0, "source_url": case["source_url"]}]
+    seen = {tid}
+    first_generation = authority_items(raw_document(tid), tid)[:5]
+    for item in first_generation:
+        if item["slug"] in seen:
+            continue
+        seen.add(item["slug"])
+        nodes.append({**item, "relationship": item["reason"], "year": "Source date not supplied", "is_current": False, "parent_slug": tid, "depth": 1})
+    for parent in list(nodes[1:])[:3]:
+        if len(nodes) >= 10:
+            break
+        try:
+            nested = authority_items(raw_document(parent["slug"]), parent["slug"])
+        except IndianKanoonError as exc:
+            logger.warning("Heritage expansion failed for %s: %s", parent["slug"], exc.message)
+            continue
+        for item in nested:
+            if len(nodes) >= 10:
+                break
+            if item["slug"] in seen:
+                continue
+            seen.add(item["slug"])
+            nodes.append({**item, "relationship": item["reason"], "year": "Source date not supplied", "is_current": False, "parent_slug": parent["slug"], "depth": 2})
+    return {"root": {"label": "Selected live judgment", "topics": [case["name"]]}, "nodes": nodes}
 
 
 def get_case_graph(tid: str) -> dict:
