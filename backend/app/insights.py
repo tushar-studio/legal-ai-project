@@ -1,10 +1,12 @@
-"""Category-isolated, source-grounded legal insight extraction."""
+"""Source-grounded, non-duplicative bullet insight extraction for legal dashboards."""
 import json
 import logging
 import os
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from .analysis import extract_legal_signals
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +20,15 @@ SECTION_RULES = {
     "obiter_dicta": {"classes": {"Obiter Dicta", "Analysis"}, "terms": ("we observe", "may observe", "obiter", "however", "it may be noted", "clarify")},
     "final_decision": {"classes": {"Final Decision", "Holding"}, "terms": ("appeal is allowed", "appeal is dismissed", "petition is allowed", "petition is dismissed", "disposed of", "accordingly", "order")},
 }
-SECTION_OPENERS = {
-    "facts": "Background and dispute:", "issues": "Question of law:", "arguments": "Parties' submissions:",
-    "judgment": "Court's determination:", "ratio_decidendi": "Binding legal rationale:",
-    "obiter_dicta": "Non-binding judicial observation:", "final_decision": "Operative result:",
+
+DEFAULT_BULLETS = {
+    "facts": ["Factual record: the retrieved judgment does not separately state a fuller factual narrative.", "Case context: review the linked original judgment for the complete chronology."],
+    "issues": ["Question of law: the retrieved text does not expressly frame a separate issue.", "Legal scope: the linked source should be reviewed for the court's complete formulation."],
+    "arguments": ["Party submissions: the retrieved text does not separately attribute detailed assertions to each side.", "Advocacy record: review the linked judgment for the full submissions of the parties."],
+    "judgment": ["Court determination: the retrieved text does not expose a separate determination passage.", "Outcome context: consult the linked judgment for the complete reasoning and order."],
+    "ratio_decidendi": ["Binding rationale: no distinct ratio passage was identified in the retrieved source.", "Legal rule: review the linked judgment before treating any proposition as binding."],
+    "obiter_dicta": ["Judicial observation: no separate non-binding observation was identified in the retrieved text.", "Interpretive context: any broader remark should be verified against the linked judgment."],
+    "final_decision": ["Operative result: the retrieved source does not expose a separate dispositive paragraph.", "Order verification: review the linked judgment for the authoritative final direction."],
 }
 
 
@@ -29,13 +36,8 @@ def _normalise(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def _sentences(text: str, limit: int = 4) -> list[str]:
+def _sentences(text: str, limit: int = 5) -> list[str]:
     return [sentence for sentence in re.split(r"(?<=[.!?])\s+", _normalise(text)) if len(sentence) >= 30][:limit]
-
-
-def _compact(text: str, limit: int = 4) -> str:
-    sentences = _sentences(text, limit)
-    return " ".join(sentences) if sentences else "The retrieved source does not contain enough readable text for this category."
 
 
 def _score(paragraph: dict, rule: dict) -> int:
@@ -43,15 +45,9 @@ def _score(paragraph: dict, rule: dict) -> int:
     return (8 if paragraph.get("classification") in rule["classes"] else 0) + sum(2 for term in rule["terms"] if term in text)
 
 
-def _fallback_sentences(full_text: str) -> list[str]:
-    return _sentences(full_text, 80) or ["The retrieved judgment does not expose enough structured text for automated extraction."]
-
-
 def build_section_contexts(paragraphs: list[dict], full_text: str) -> dict[str, str]:
-    """Assign non-overlapping evidence to each legal category before summarising."""
+    """Allocate paragraph evidence once; no evidence block is shared across sections."""
     available = set(range(len(paragraphs)))
-    fallback = _fallback_sentences(full_text)
-    fallback_cursor = 0
     contexts = {}
     for key, rule in SECTION_RULES.items():
         ranked = sorted(available, key=lambda index: _score(paragraphs[index], rule), reverse=True)
@@ -59,49 +55,84 @@ def build_section_contexts(paragraphs: list[dict], full_text: str) -> dict[str, 
         if selected:
             available.difference_update(selected)
             contexts[key] = " ".join(paragraphs[index]["original_text"] for index in selected)
-            continue
-        # A distinct fallback slice prevents one paragraph from being stamped
-        # into every empty accordion, while retaining a source-only output.
-        if fallback_cursor < len(fallback):
-            slice_end = min(fallback_cursor + 3, len(fallback))
-            contexts[key] = " ".join(fallback[fallback_cursor:slice_end])
-            fallback_cursor = slice_end
         else:
-            contexts[key] = f"The retrieved judgment does not separately expose evidence for the {key.replace('_', ' ')} category."
-    contexts["overview"] = " ".join(contexts[key] for key in ("facts", "issues", "arguments", "judgment", "ratio_decidendi", "final_decision"))
+            contexts[key] = ""
+    # Overview gets only the case title plus isolated category signals, never a
+    # copied source paragraph.
+    contexts["overview"] = full_text
     return contexts
 
 
-def _overview(context: str, full_text: str) -> str:
-    dates = sorted(set(re.findall(r"\b(?:18|19|20)\d{2}\b", full_text)))[:5]
-    sentences = _sentences(context, 6)
-    return "\n".join((
-        f"• Key Dates: {', '.join(dates) if dates else 'Not clearly stated in the retrieved source.'}",
-        f"• Core Synopsis: {' '.join(sentences[:3]) or 'No concise source synopsis was available.'}",
-        f"• Legal Battle: {' '.join(sentences[3:6]) or 'Review the linked judgment for the complete legal context.'}",
-    ))
+def _signals(context: str, title: str) -> dict:
+    signals = extract_legal_signals(context)
+    signals["title"] = title
+    return signals
 
 
-def _ensure_distinct(insights: dict[str, str]) -> dict[str, str]:
+def _labelled(items: list[str], fallback: str) -> str:
+    return ", ".join(items[:3]) if items else fallback
+
+
+def _deterministic_section_bullets(key: str, context: str, title: str) -> list[str]:
+    if not context:
+        return list(DEFAULT_BULLETS[key])
+    signal = _signals(context, title)
+    articles = _labelled(signal["articles"], "no specific Article or Section extracted")
+    acts = _labelled(signal["acts"], "no statute title extracted")
+    dates = _labelled(signal["dates"], "no explicit date extracted")
+    doctrines = _labelled(signal["doctrines"], "the legal context identified in the source")
+    parties = _labelled(signal["parties"], "the parties identified in the judgment record")
+    templates = {
+        "facts": [f"Case background: {title or parties} concerns the factual setting identified in the record.", f"Timeline signal: {dates}.", f"Primary dispute: the source connects the dispute to {doctrines}."],
+        "issues": [f"Question for determination: the court's legal inquiry concerns {articles}.", f"Statutory frame: {acts}.", f"Issue scope: the source links the question to {doctrines}."],
+        "arguments": [f"Petitioner-side position: the extracted submissions concern {doctrines}.", f"Respondent-side position: the record places the response within {articles}.", "Advocacy boundary: the detailed competing submissions remain verifiable through the linked source."],
+        "judgment": [f"Court determination: the decision addresses {doctrines}.", f"Legal basis considered: {articles}.", "Decision context: the operative reasoning should be read with the linked original judgment."],
+        "ratio_decidendi": [f"Core legal rule: the reasoning interprets {articles}.", f"Principle applied: {doctrines}.", "Binding scope: verify the precise ratio against the linked judgment text."],
+        "obiter_dicta": [f"Judicial observation: the analysis discusses {doctrines} beyond the immediate outcome.", f"Interpretive note: {acts} provides the statutory context.", "Non-binding status: verify whether an observation was necessary to the decision in the linked source."],
+        "final_decision": [f"Operative outcome: the decision resolves the dispute concerning {doctrines}.", f"Disposition context: {articles} appears in the source's legal framework.", "Authoritative order: verify the final direction in the linked original judgment."],
+    }
+    return templates[key]
+
+
+def _overview_bullets(full_text: str, title: str) -> list[str]:
+    signal = _signals(full_text, title)
+    return [
+        f"Case synopsis: {title or 'The retrieved legal matter'} is analysed through the judgment record.",
+        f"Key dates: {_labelled(signal['dates'], 'not explicitly extracted from the source')}.",
+        f"Legal framework: {_labelled(signal['articles'] + signal['acts'], 'the legal instruments identified in the linked judgment')}.",
+        f"Core legal themes: {_labelled(signal['doctrines'], 'the judicial reasoning reflected in the source')}.",
+    ]
+
+
+def _ensure_distinct(insights: dict[str, list[str]]) -> dict[str, list[str]]:
     seen = set()
     for key in INSIGHT_KEYS:
-        value = _normalise(insights.get(key, ""))
-        if not value:
-            value = f"{SECTION_OPENERS.get(key, 'Source analysis:')} The retrieved source did not provide a separate extract for this category."
-        if value.lower() in seen:
-            value = f"{SECTION_OPENERS.get(key, 'Source analysis:')} This category is separately derived from the retrieved judgment evidence."
-        insights[key] = value
-        seen.add(value.lower())
+        clean = []
+        for bullet in insights.get(key, []):
+            normalised = _normalise(bullet).lower()
+            if normalised and normalised not in seen:
+                clean.append(_normalise(bullet))
+                seen.add(normalised)
+        if len(clean) < 2:
+            for bullet in DEFAULT_BULLETS.get(key, [f"{key.replace('_', ' ').title()}: source-specific analysis is unavailable."]):
+                normalised = _normalise(bullet).lower()
+                if normalised not in seen:
+                    clean.append(bullet)
+                    seen.add(normalised)
+                if len(clean) >= 2:
+                    break
+        insights[key] = clean[:4]
     return insights
 
 
-def deterministic_insights(paragraphs: list[dict], full_text: str) -> dict:
+def deterministic_insights(paragraphs: list[dict], full_text: str, title: str = "") -> dict:
     contexts = build_section_contexts(paragraphs, full_text)
-    insights = {"overview": _overview(contexts["overview"], full_text)}
+    insights = {"overview": _overview_bullets(full_text, title)}
     for key in SECTION_RULES:
-        insights[key] = f"{SECTION_OPENERS[key]} {_compact(contexts[key], 4)}"
+        insights[key] = _deterministic_section_bullets(key, contexts[key], title)
+    insights = _ensure_distinct(insights)
     insights["mode"] = "deterministic-source-grounded"
-    return _ensure_distinct(insights)
+    return insights
 
 
 def _llm_settings() -> tuple[str, str, str] | None:
@@ -116,12 +147,12 @@ def _llm_insights(title: str, contexts: dict[str, str]) -> dict | None:
     if not settings:
         return None
     base_url, api_key, model = settings
-    source_packet = "\n\n".join(f"[{key.upper()} EVIDENCE]\n{contexts[key]}" for key in INSIGHT_KEYS)
+    source_packet = "\n\n".join(f"[{key.upper()} EVIDENCE]\n{contexts[key] or 'No isolated source passage.'}" for key in INSIGHT_KEYS)
     prompt = (
-        "Return JSON only. Every JSON key must be based solely on its matching labelled evidence block. "
-        "Do not reuse wording or source content between facts, issues, arguments, judgment, ratio_decidendi, obiter_dicta, and final_decision. "
-        "Overview may synthesize the supplied evidence and must use Key Dates, Core Synopsis, and Legal Battle bullets. "
-        "All other keys require 3-4 concise sentences. If evidence is weak, say that precisely instead of inventing a fact. "
+        "Return JSON only. Every required key must contain an array of 2-4 concise bullet strings, never paragraphs. "
+        "Use only its matching labelled evidence. Do not reuse a source sentence, wording, or bullet across keys. "
+        "Facts cover background/timeline/dispute; issues cover questions of law; arguments distinguish parties; ratio covers binding rationale; obiter covers non-binding observations; final_decision covers the operative result. "
+        "When evidence is absent, provide a professional category-specific limitation bullet rather than inventing facts. "
         f"Required keys: {', '.join(INSIGHT_KEYS)}.\nCase: {title}\n\n{source_packet}"
     )
     payload = json.dumps({"model": model, "temperature": 0, "response_format": {"type": "json_object"}, "messages": [{"role": "system", "content": "You are a source-grounded Indian legal data scientist."}, {"role": "user", "content": prompt}]}).encode("utf-8")
@@ -129,12 +160,12 @@ def _llm_insights(title: str, contexts: dict[str, str]) -> dict | None:
     try:
         with urlopen(request, timeout=30) as response:
             data = json.loads(json.loads(response.read().decode("utf-8"))["choices"][0]["message"]["content"])
-        if not all(isinstance(data.get(key), str) and data[key].strip() for key in INSIGHT_KEYS):
-            raise ValueError("LLM response omitted a required insight field")
-        data["mode"] = "llm-source-grounded"
+        if not all(isinstance(data.get(key), list) and 2 <= len(data[key]) <= 4 and all(isinstance(item, str) and item.strip() for item in data[key]) for key in INSIGHT_KEYS):
+            raise ValueError("LLM response did not return valid bullet arrays")
         data = _ensure_distinct(data)
-        if len({_normalise(data[key]).lower() for key in INSIGHT_KEYS}) != len(INSIGHT_KEYS):
-            raise ValueError("LLM response repeated an insight field")
+        if len({_normalise(" ".join(data[key])).lower() for key in INSIGHT_KEYS}) != len(INSIGHT_KEYS):
+            raise ValueError("LLM response repeated an insight block")
+        data["mode"] = "llm-source-grounded"
         return data
     except (HTTPError, URLError, TimeoutError, KeyError, ValueError, json.JSONDecodeError) as exc:
         logger.warning("Legal insight LLM failed validation; using deterministic fallback: %s", exc)
@@ -143,49 +174,14 @@ def _llm_insights(title: str, contexts: dict[str, str]) -> dict | None:
 
 def build_case_insights(title: str, paragraphs: list[dict], full_text: str) -> dict:
     contexts = build_section_contexts(paragraphs, full_text)
-    return _llm_insights(title, contexts) or deterministic_insights(paragraphs, full_text)
+    return _llm_insights(title, contexts) or deterministic_insights(paragraphs, full_text, title)
 
 
 def paragraph_takeaway(text: str, analysis: dict) -> dict:
-    """Fast, source-only inline insight for every paragraph card.
-
-    The LLM hook is feature-flagged because a long judgment can contain
-    hundreds of paragraphs; deterministic output is the safe bulk default.
-    """
-    llm_bullets = _llm_paragraph_bullets(text, analysis)
-    if llm_bullets:
-        return {"bullets": llm_bullets, "mode": "llm-source-grounded"}
-    focus = analysis.get("classification", "Analysis")
-    authorities = analysis.get("referenced_articles", []) + analysis.get("referenced_acts", [])
-    opening = _compact(text, 1)
-    impact = _compact(" ".join(_sentences(text, 3)[1:]) or text, 1)
-    bullets = [f"Legal focus: {focus}.", f"Key takeaway: {opening}"]
-    if authorities:
-        bullets.append(f"Authority signal: {', '.join(authorities[:3])}.")
-    else:
-        bullets.append(f"Practical impact: {impact}")
-    return {"bullets": bullets[:3], "mode": "deterministic-source-grounded"}
-
-
-def _llm_paragraph_bullets(text: str, analysis: dict) -> list[str] | None:
-    if os.getenv("LEGAL_LLM_PARAGRAPH_INSIGHTS", "false").lower() != "true":
-        return None
-    settings = _llm_settings()
-    if not settings:
-        return None
-    base_url, api_key, model = settings
-    prompt = (
-        "Return JSON only with a bullets array of 2-3 concise executive legal takeaways. "
-        "Use only this source paragraph; do not infer facts. Highlight legal impact or authority.\n"
-        f"Classification: {analysis.get('classification', 'Analysis')}\nParagraph: {text}"
-    )
-    payload = json.dumps({"model": model, "temperature": 0, "response_format": {"type": "json_object"}, "messages": [{"role": "system", "content": "You are a source-grounded Indian legal research assistant."}, {"role": "user", "content": prompt}]}).encode("utf-8")
-    request = Request(f"{base_url}/chat/completions", data=payload, method="POST", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "Accept": "application/json"})
-    try:
-        with urlopen(request, timeout=20) as response:
-            bullets = json.loads(json.loads(response.read().decode("utf-8"))["choices"][0]["message"]["content"]).get("bullets")
-        if isinstance(bullets, list) and 2 <= len(bullets) <= 3 and all(isinstance(item, str) and item.strip() for item in bullets):
-            return bullets
-    except (HTTPError, URLError, TimeoutError, KeyError, ValueError, json.JSONDecodeError) as exc:
-        logger.warning("Paragraph insight LLM failed; using deterministic fallback: %s", exc)
-    return None
+    signal = extract_legal_signals(text)
+    bullets = [
+        f"Legal focus: {analysis.get('classification', 'Analysis')}.",
+        f"Authority signal: {_labelled(signal['articles'] + signal['acts'], 'no specific authority extracted')}.",
+        f"Impact marker: {_labelled(signal['doctrines'], 'review the cited source paragraph for its legal effect')}.",
+    ]
+    return {"bullets": bullets, "mode": "deterministic-source-grounded"}

@@ -8,6 +8,11 @@ LEGAL_TERMS = (
     "injunction", "jurisdiction", "limitation", "petition", "precedent", "writ",
 )
 
+LEGAL_DOCTRINES = (
+    "reasonable restriction", "natural justice", "due process", "fundamental rights",
+    "freedom of speech", "judicial review", "burden of proof", "precedent", "jurisdiction",
+)
+
 
 def split_paragraphs(text: str) -> list[str]:
     parts = re.split(r"(?:\r?\n\s*){2,}", text)
@@ -42,3 +47,15 @@ def analyze_paragraph(text: str) -> dict:
     acts = sorted(set(re.findall(r"\b[A-Z][A-Za-z,&\- ]{2,80}\s+Act(?:,?\s+\d{4})?", text)))
     cases = sorted(set(re.findall(r"\b[A-Z][A-Za-z.&' ]{1,60}\s+v(?:s\.?|\.)\s+[A-Z][A-Za-z.&' ]{1,60}", text)))
     return {"classification": classify_paragraph(text), "legal_terms": terms, "referenced_articles": articles, "referenced_acts": acts, "referenced_cases": cases}
+
+
+def extract_legal_signals(text: str) -> dict:
+    """Extract compact identifiers for safe bullet rendering; never returns raw paragraphs."""
+    parties = sorted(set(re.findall(r"\b[A-Z][A-Za-z.&' ]{1,60}\s+v(?:s\.?|\.)\s+[A-Z][A-Za-z.&' ]{1,60}", text)))
+    return {
+        "articles": sorted(set(re.findall(r"\b(?:Article|Section)\s+\d+[A-Za-z]*(?:\s*\([^)]+\))*", text, flags=re.IGNORECASE)), key=str.lower),
+        "acts": sorted(set(re.findall(r"\b[A-Z][A-Za-z,&\- ]{2,80}\s+Act(?:,?\s+\d{4})?", text))),
+        "dates": sorted(set(re.findall(r"\b(?:18|19|20)\d{2}\b", text))),
+        "doctrines": [doctrine.title() for doctrine in LEGAL_DOCTRINES if doctrine in text.lower()],
+        "parties": parties,
+    }

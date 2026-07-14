@@ -846,6 +846,29 @@ body {
     white-space: pre-wrap;
 }
 
+.case-insight-bullets {
+    color: #d4d4da;
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    gap: 9px;
+    line-height: 1.6;
+    margin: 0;
+    padding-left: 20px;
+}
+
+.case-insight-bullets li::marker {
+    color: #2979FF;
+}
+
+.legal-blue-highlight {
+    background: rgba(41, 121, 255, .14);
+    border-radius: 4px;
+    color: #67b0ff;
+    font-weight: 700;
+    padding: 1px 3px;
+}
+
 .insight-label {
     color: #8fc0ff;
     display: inline-block;

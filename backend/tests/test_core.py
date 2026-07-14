@@ -37,10 +37,10 @@ class LiveResearchTests(unittest.TestCase):
             {"classification": "Holding", "original_text": "The Court held that the restriction was not justified under the statute."},
         ]
         insights = deterministic_insights(paragraphs, " ".join(item["original_text"] for item in paragraphs))
-        self.assertIn("Key Dates", insights["overview"])
+        self.assertIn("Key dates", " ".join(insights["overview"]))
         self.assertTrue(all(insights[key] for key in ("facts", "arguments", "judgment", "ratio_decidendi", "obiter_dicta", "final_decision")))
         keys = ("overview", "facts", "issues", "arguments", "judgment", "ratio_decidendi", "obiter_dicta", "final_decision")
-        self.assertEqual(len({insights[key].lower() for key in keys}), len(keys))
+        self.assertEqual(len({" ".join(insights[key]).lower() for key in keys}), len(keys))
 
     def test_statute_metadata_uses_jurisdiction_defaults(self):
         court, bench, year = case_metadata_defaults("Article 19 of the Constitution", "The Constitution was enacted in 1950.", {}, {})

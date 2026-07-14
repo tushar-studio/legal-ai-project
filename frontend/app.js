@@ -29,6 +29,17 @@ function highlightLegalText(text, values = []) {
   return terms.length ? escaped.replace(new RegExp(`(${terms.join('|')})`, 'gi'), '<mark class="legal-highlight-tint">$1</mark>') : escaped;
 }
 
+function highlightDashboardTerms(text) {
+  const escaped = escapeHtml(text);
+  const pattern = /\b(?:Article|Section)\s+\d+[A-Za-z]*(?:\s*\([^)]+\))*|\b(?:18|19|20)\d{2}\b|\b[A-Z][A-Za-z.&' ]{1,60}\s+v(?:s\.?|\.)\s+[A-Z][A-Za-z.&' ]{1,60}|\b(?:Freedom of Speech|Fundamental Rights|Natural Justice|Due Process|Judicial Review|Reasonable Restriction|Burden of Proof|Precedent|Jurisdiction)\b/gi;
+  return escaped.replace(pattern, '<span class="legal-blue-highlight">$&</span>');
+}
+
+function renderInsightBullets(value, fallback) {
+  const bullets = Array.isArray(value) ? value : (value ? [value] : [fallback]);
+  return `<ul class="case-insight-bullets">${bullets.slice(0, 4).map(bullet => `<li>${highlightDashboardTerms(bullet)}</li>`).join('')}</ul>`;
+}
+
 function paragraphInsightBullets(paragraph) {
   const bullets = paragraph.ai_analysis?.bullets;
   return Array.isArray(bullets) && bullets.length ? bullets : [`Legal focus: ${paragraph.classification || 'Analysis'}.`, `Key takeaway: ${paragraph.simplified_explanation || 'Review the cited source paragraph.'}`];
@@ -66,7 +77,7 @@ function renderDashboard() {
   }
   const sections = [['Facts', selectedCase.facts], ['Legal Issues', selectedCase.issues], ['Arguments', selectedCase.arguments], ['Judgment', selectedCase.judgment], ['Ratio Decidendi', selectedCase.ratio_decidendi], ['Obiter Dicta', selectedCase.obiter_dicta], ['Final Decision', selectedCase.final_decision]];
   const insightMode = selectedCase.mode === 'llm-source-grounded' ? 'LLM source-grounded insight' : 'Source-grounded concise insight';
-  root.innerHTML = `<div class="case-info-header"><span class="info-tag"><i class="fa-solid fa-landmark"></i> Live Indian Kanoon Source</span><h2>${escapeHtml(selectedCase.name)}</h2><div class="metadata-grid"><div><strong>Court:</strong> ${escapeHtml(selectedCase.court)}</div><div><strong>Bench:</strong> ${escapeHtml(selectedCase.bench)}</div><div><strong>Year:</strong> ${escapeHtml(selectedCase.year)}</div><div><strong>Citation:</strong> ${escapeHtml(selectedCase.citation)}</div><div class="meta-wide"><strong>Judges:</strong> ${escapeHtml(selectedCase.judges)}</div></div></div><article class="case-overview"><h3>Case Overview</h3><span class="insight-label">${escapeHtml(insightMode)}</span><p class="ai-insight">${escapeHtml(selectedCase.overview)}</p>${citationLink(selectedCase.source_url, 'Source link: original judgment on Indian Kanoon')}</article><div class="case-sections">${sections.map(([title, text]) => `<details><summary>${title}</summary><div class="case-section-text"><span class="insight-label">${escapeHtml(insightMode)}</span><p class="ai-insight">${escapeHtml(text)}</p>${citationLink(selectedCase.source_url, 'Source link: original judgment on Indian Kanoon')}</div></details>`).join('')}</div><div class="research-actions"><button data-action="citation">Generate Citation</button><button data-action="export-summary">Export Summary</button><button data-action="compare">Compare with another case</button><button data-action="notes">Generate Research Notes</button><button data-action="download-pdf">Print / Save PDF</button></div><p class="source-attribution">Powered by Indian Kanoon</p>`;
+  root.innerHTML = `<div class="case-info-header"><span class="info-tag"><i class="fa-solid fa-landmark"></i> Live Indian Kanoon Source</span><h2>${escapeHtml(selectedCase.name)}</h2><div class="metadata-grid"><div><strong>Court:</strong> ${escapeHtml(selectedCase.court)}</div><div><strong>Bench:</strong> ${escapeHtml(selectedCase.bench)}</div><div><strong>Year:</strong> ${escapeHtml(selectedCase.year)}</div><div><strong>Citation:</strong> ${escapeHtml(selectedCase.citation)}</div><div class="meta-wide"><strong>Judges:</strong> ${escapeHtml(selectedCase.judges)}</div></div></div><article class="case-overview"><h3>Case Overview</h3><span class="insight-label">${escapeHtml(insightMode)}</span>${renderInsightBullets(selectedCase.overview, 'Case overview is unavailable from the live source.')} ${citationLink(selectedCase.source_url, 'Source link: original judgment on Indian Kanoon')}</article><div class="case-sections">${sections.map(([title, text]) => `<details><summary>${title}</summary><div class="case-section-text"><span class="insight-label">${escapeHtml(insightMode)}</span>${renderInsightBullets(text, `${title} insight is unavailable from the live source.`)}${citationLink(selectedCase.source_url, 'Source link: original judgment on Indian Kanoon')}</div></details>`).join('')}</div><div class="research-actions"><button data-action="citation">Generate Citation</button><button data-action="export-summary">Export Summary</button><button data-action="compare">Compare with another case</button><button data-action="notes">Generate Research Notes</button><button data-action="download-pdf">Print / Save PDF</button></div><p class="source-attribution">Powered by Indian Kanoon</p>`;
 }
 
 function renderResearchPanel() {
