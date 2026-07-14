@@ -16,11 +16,17 @@ def split_paragraphs(text: str) -> list[str]:
 
 def classify_paragraph(text: str) -> str:
     lowered = text.lower()
-    if any(term in lowered for term in ("held that", "we hold", "it is held", "therefore held")):
+    if any(term in lowered for term in ("appeal is allowed", "appeal is dismissed", "petition is allowed", "petition is dismissed", "disposed of", "accordingly")):
+        return "Final Decision"
+    if any(term in lowered for term in ("we hold", "it is held", "settled law", "binding precedent", "ratio decidendi")):
+        return "Ratio Decidendi"
+    if any(term in lowered for term in ("we may observe", "we observe", "obiter", "it may be noted")):
+        return "Obiter Dicta"
+    if any(term in lowered for term in ("held that", "therefore held", "conclusion", "order of the court")):
         return "Holding"
     if any(term in lowered for term in ("issue", "question is", "whether")):
         return "Legal Issue"
-    if any(term in lowered for term in ("submitted", "contended", "argued")):
+    if any(term in lowered for term in ("submitted", "contended", "argued", "learned counsel", "urged", "on behalf of")):
         return "Arguments"
     if any(term in lowered for term in ("section", "article", "act", "statute")):
         return "Legal Provision"

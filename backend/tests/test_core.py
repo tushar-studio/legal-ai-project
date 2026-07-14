@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.analysis import analyze_paragraph, split_paragraphs
 from app.indian_kanoon import IndianKanoonError, html_paragraphs
+from app.insights import deterministic_insights
 
 
 class LiveResearchTests(unittest.TestCase):
@@ -27,6 +28,16 @@ class LiveResearchTests(unittest.TestCase):
             with self.assertRaises(IndianKanoonError) as context:
                 api_request("/search/")
         self.assertEqual(context.exception.status_code, 503)
+
+    def test_concise_fallback_populates_all_dashboard_sections(self):
+        paragraphs = [
+            {"classification": "Facts", "original_text": "In 2019 the petitioner challenged the order issued by the respondent authority."},
+            {"classification": "Arguments", "original_text": "Learned counsel submitted that the restriction violated Article 19(1)(a)."},
+            {"classification": "Holding", "original_text": "The Court held that the restriction was not justified under the statute."},
+        ]
+        insights = deterministic_insights(paragraphs, " ".join(item["original_text"] for item in paragraphs))
+        self.assertIn("Key Dates", insights["overview"])
+        self.assertTrue(all(insights[key] for key in ("facts", "arguments", "judgment", "ratio_decidendi", "obiter_dicta", "final_decision")))
 
 
 if __name__ == "__main__":

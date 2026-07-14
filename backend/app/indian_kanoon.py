@@ -11,6 +11,7 @@ from urllib.parse import quote_plus, urlencode
 from urllib.request import Request, urlopen
 
 from .analysis import analyze_paragraph, split_paragraphs
+from .insights import build_case_insights
 
 API_BASE = "https://api.indiankanoon.org"
 PUBLIC_BASE = "https://indiankanoon.org"
@@ -142,12 +143,6 @@ def get_case_paragraphs(tid: str) -> list[dict]:
     return html_paragraphs(tid, document.get("doc", ""))
 
 
-def source_section(paragraphs: list[dict], classifications: set[str], fallback: str) -> str:
-    """Return complete, source-originating paragraph text for a dashboard section."""
-    matches = [item["original_text"] for item in paragraphs if item["classification"] in classifications]
-    return "\n\n".join(matches) if matches else fallback
-
-
 def get_case(tid: str) -> dict:
     document = raw_document(tid)
     metadata = document.get("docmeta", {})
@@ -155,8 +150,8 @@ def get_case(tid: str) -> dict:
     paragraphs = html_paragraphs(tid, document.get("doc", ""))
     title = text_from_html(document.get("title", metadata.get("title", "Indian Kanoon judgment")))
     citations = document.get("citeList", [])
-    unavailable = "No source paragraph was classified for this section. Review the complete original judgment using the source link below."
-    return {"slug": tid, "name": title, "court": text_from_html(document.get("docsource", metadata.get("court", "Indian Kanoon"))), "bench": text_from_html(str(metadata.get("bench", "Not supplied by source"))), "judges": text_from_html(str(metadata.get("author", "Not supplied by source"))), "year": str(metadata.get("year", "Not supplied by source")), "citation": text_from_html(str(citations[0].get("title", "Indian Kanoon live judgment") if citations and isinstance(citations[0], dict) else "Indian Kanoon live judgment")), "overview": text or unavailable, "facts": source_section(paragraphs, {"Facts"}, unavailable), "issues": source_section(paragraphs, {"Legal Issue"}, unavailable), "arguments": source_section(paragraphs, {"Arguments"}, unavailable), "judgment": source_section(paragraphs, {"Holding"}, unavailable), "ratio_decidendi": source_section(paragraphs, {"Holding"}, unavailable), "obiter_dicta": source_section(paragraphs, {"Analysis"}, unavailable), "final_decision": source_section(paragraphs, {"Holding"}, unavailable), "topics": [], "source_url": source_url(tid), "attribution": "Powered by Indian Kanoon"}
+    insights = build_case_insights(title, paragraphs, text)
+    return {"slug": tid, "name": title, "court": text_from_html(document.get("docsource", metadata.get("court", "Indian Kanoon"))), "bench": text_from_html(str(metadata.get("bench", "Not supplied by source"))), "judges": text_from_html(str(metadata.get("author", "Not supplied by source"))), "year": str(metadata.get("year", "Not supplied by source")), "citation": text_from_html(str(citations[0].get("title", "Indian Kanoon live judgment") if citations and isinstance(citations[0], dict) else "Indian Kanoon live judgment")), **insights, "topics": [], "source_url": source_url(tid), "attribution": "Powered by Indian Kanoon"}
 
 
 def get_case_similar(tid: str) -> list[dict]:
