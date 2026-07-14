@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from app.analysis import analyze_paragraph, split_paragraphs
-from app.indian_kanoon import IndianKanoonError, html_paragraphs
+from app.indian_kanoon import IndianKanoonError, case_metadata_defaults, html_paragraphs
 from app.insights import deterministic_insights
 
 
@@ -38,6 +38,14 @@ class LiveResearchTests(unittest.TestCase):
         insights = deterministic_insights(paragraphs, " ".join(item["original_text"] for item in paragraphs))
         self.assertIn("Key Dates", insights["overview"])
         self.assertTrue(all(insights[key] for key in ("facts", "arguments", "judgment", "ratio_decidendi", "obiter_dicta", "final_decision")))
+        keys = ("overview", "facts", "issues", "arguments", "judgment", "ratio_decidendi", "obiter_dicta", "final_decision")
+        self.assertEqual(len({insights[key].lower() for key in keys}), len(keys))
+
+    def test_statute_metadata_uses_jurisdiction_defaults(self):
+        court, bench, year = case_metadata_defaults("Article 19 of the Constitution", "The Constitution was enacted in 1950.", {}, {})
+        self.assertIn("Supreme Court", court)
+        self.assertIn("Constitutional Interpretation", bench)
+        self.assertEqual(year, "1950")
 
 
 if __name__ == "__main__":

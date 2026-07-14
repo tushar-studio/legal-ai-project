@@ -143,6 +143,24 @@ def get_case_paragraphs(tid: str) -> list[dict]:
     return html_paragraphs(tid, document.get("doc", ""))
 
 
+def case_metadata_defaults(title: str, text: str, metadata: dict, document: dict) -> tuple[str, str, str]:
+    """Provide professional jurisdiction metadata for statutes and constitutional materials."""
+    is_statutory_material = bool(re.search(r"\b(article|section|constitution|act|rules?)\b", title, flags=re.IGNORECASE))
+    if is_statutory_material:
+        enactment = re.search(r"\b(?:enacted|amended|commenced|constitution).*?\b((?:18|19|20)\d{2})\b", text, flags=re.IGNORECASE)
+        first_year = enactment.group(1) if enactment else next(iter(re.findall(r"\b(?:18|19|20)\d{2}\b", text)), "Not supplied by source")
+        return (
+            "Supreme Court of India / Respective High Courts (Jurisdictional Scope)",
+            "Full Bench / Constitutional Interpretation",
+            first_year,
+        )
+    return (
+        text_from_html(document.get("docsource", metadata.get("court", "Not supplied by source"))),
+        text_from_html(str(metadata.get("bench", "Not supplied by source"))),
+        str(metadata.get("year", "Not supplied by source")),
+    )
+
+
 def get_case(tid: str) -> dict:
     document = raw_document(tid)
     metadata = document.get("docmeta", {})
@@ -151,7 +169,8 @@ def get_case(tid: str) -> dict:
     title = text_from_html(document.get("title", metadata.get("title", "Indian Kanoon judgment")))
     citations = document.get("citeList", [])
     insights = build_case_insights(title, paragraphs, text)
-    return {"slug": tid, "name": title, "court": text_from_html(document.get("docsource", metadata.get("court", "Indian Kanoon"))), "bench": text_from_html(str(metadata.get("bench", "Not supplied by source"))), "judges": text_from_html(str(metadata.get("author", "Not supplied by source"))), "year": str(metadata.get("year", "Not supplied by source")), "citation": text_from_html(str(citations[0].get("title", "Indian Kanoon live judgment") if citations and isinstance(citations[0], dict) else "Indian Kanoon live judgment")), **insights, "topics": [], "source_url": source_url(tid), "attribution": "Powered by Indian Kanoon"}
+    court, bench, year = case_metadata_defaults(title, text, metadata, document)
+    return {"slug": tid, "name": title, "court": court, "bench": bench, "judges": text_from_html(str(metadata.get("author", "Not supplied by source"))), "year": year, "citation": text_from_html(str(citations[0].get("title", "Indian Kanoon live judgment") if citations and isinstance(citations[0], dict) else "Indian Kanoon live judgment")), **insights, "topics": [], "source_url": source_url(tid), "attribution": "Powered by Indian Kanoon"}
 
 
 def get_case_similar(tid: str) -> list[dict]:
